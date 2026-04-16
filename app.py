@@ -8,48 +8,44 @@ Covers ALL project criteria:
   4. Exploration Phase    — 6+ variables, univariate + multivariate
   5. Visualization        — 5+ plot types (hist, box, bar, scatter, heatmap, pie)
 """
-
+# importation needed liberaries
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import warnings
+import warnings      # to ignore any warings messeges of python
 warnings.filterwarnings("ignore")
 
 # PAGE CONFIG
 st.set_page_config(
     page_title="NY Real Estate 2026 Analysis",
     page_icon="🏙️",
-    layout="wide",
+    layout="wide",                                          #علشان كل حاجة تبقي في الشاشة كاملة مش جزء منها
     initial_sidebar_state="expanded",
 )
 
 
 
 
-# DATA LOADING & CACHING
+# DATA LOADING & CACHING to make data called one time
 @st.cache_data
 def load_raw_data(path: str) -> pd.DataFrame:
-    """Load raw CSV and return as-is for the 'before cleaning' view."""
     return pd.read_csv(path)
 
 
 @st.cache_data
 def clean_data(path: str) -> tuple[pd.DataFrame, list]:
-    """
-    Clean the raw dataset and return (cleaned_df, cleaning_log).
-    Cleaning steps are documented in the log list.
-    """
+   
     df = pd.read_csv(path)
-    log = []
+    log = [] #to store any new things are been done
 
     # Step 1 – Remove duplicate rows
     before = len(df)
     df = df.drop_duplicates()
     removed = before - len(df)
-    log.append(f"✅ Removed {removed} duplicate rows → {len(df)} rows remain.")
+    log.append(f" Removed {removed} duplicate rows → {len(df)} rows remain.")
 
     # Step 2 – Standardise 'type' column (merge near-duplicates)
     type_map = {
@@ -61,26 +57,26 @@ def clean_data(path: str) -> tuple[pd.DataFrame, list]:
     df["type"] = df["type"].replace(type_map)
     df = df[df["type"].notna()]
     log.append(
-        f"✅ Standardised 'type': merged 'townhome'→'townhomes', 'condo'→'condos', "
+        f"Standardised 'type': merged 'townhome'→'townhomes', 'condo'→'condos', "
         f"dropped 'unknown'. Unique types now: {sorted(df['type'].unique())}."
     )
 
     # Step 3 – Drop 'text' (free-form description, not useful for numeric analysis)
     df = df.drop(columns=["text"])
-    log.append("✅ Dropped 'text' column (free-form description, no analytical value).")
+    log.append(" Dropped 'text' column (free-form description, no analytical value).")
 
     # Step 4 – Drop 'baths_full_calc' (redundant with 'baths_full')
     corr = df[["baths_full", "baths_full_calc"]].corr().iloc[0, 1]
     df = df.drop(columns=["baths_full_calc"])
     log.append(
-        f"✅ Dropped 'baths_full_calc' (correlation with 'baths_full' = {corr:.3f} → redundant)."
+        f" Dropped 'baths_full_calc' (correlation with 'baths_full' = {corr:.3f} → redundant)."
     )
 
     # Step 5 – Remove extreme price outliers (< $10 000 or > $50 M)
     before = len(df)
     df = df[(df["listPrice"] >= 10_000) & (df["listPrice"] <= 50_000_000)]
     log.append(
-        f"✅ Removed {before - len(df)} price outliers "
+        f" Removed {before - len(df)} price outliers "
         f"(listPrice < $10 000 or > $50 M) → {len(df)} rows remain."
     )
 
@@ -89,14 +85,14 @@ def clean_data(path: str) -> tuple[pd.DataFrame, list]:
     before = len(df)
     df = df[df["sqft"].isna() | (df["sqft"] <= p99)]
     log.append(
-        f"✅ Removed {before - len(df)} sqft outliers (> 99th pct = {p99:,.0f} sqft)."
+        f"Removed {before - len(df)} sqft outliers (> 99th pct = {p99:,.0f} sqft)."
     )
 
     # Step 7 – Cap garage at reasonable value (> 10 is likely data error)
     before_max = df["garage"].max()
     df.loc[df["garage"] > 10, "garage"] = np.nan
     log.append(
-        f"✅ Set garage > 10 to NaN (max was {before_max:.0f}, clearly erroneous)."
+        f"Set garage > 10 to NaN (max was {before_max:.0f}, clearly erroneous)."
     )
 
     # Step 8 – Impute missing numeric values with median per property type
@@ -109,7 +105,7 @@ def clean_data(path: str) -> tuple[pd.DataFrame, list]:
         # fallback global median for types with all-NaN
         df[col] = df[col].fillna(df[col].median())
         log.append(
-            f"✅ Imputed '{col}': {missing_before} missing → filled with median per type."
+            f"Imputed '{col}': {missing_before} missing → filled with median per type."
         )
 
     # Step 9 – Fill sub_type from type where missing
@@ -128,24 +124,23 @@ def clean_data(path: str) -> tuple[pd.DataFrame, list]:
         axis=1,
     )
     log.append(
-        f"✅ Imputed 'sub_type': {before_missing} missing → inferred from 'type' where possible."
+        f"Imputed 'sub_type': {before_missing} missing → inferred from 'type' where possible."
     )
 
-    # Step 10 – Derive helper columns
+    # Step 10 – Derive helper columns (this is feature engineering)
     df["price_per_sqft"] = (df["listPrice"] / df["sqft"]).round(2)
     df["price_M"] = (df["listPrice"] / 1_000_000).round(3)   # millions
     df["beds_int"] = df["beds"].clip(upper=10).astype(int)
     log.append(
-        "✅ Derived 'price_per_sqft', 'price_M', and 'beds_int' columns."
+        " Derived 'price_per_sqft', 'price_M', and 'beds_int' columns."
     )
 
     df = df.reset_index(drop=True)
     return df, log
 
 
-# ─────────────────────────────────────────────
+
 # HELPER PLOTTING FUNCTIONS
-# ─────────────────────────────────────────────
 PALETTE = px.colors.qualitative.Bold
 
 def fmt_price(val: float) -> str:
@@ -215,42 +210,39 @@ def plot_pie(df, col, title, palette=PALETTE):
     return fig
 
 
-# ─────────────────────────────────────────────
+
 # SIDEBAR
-# ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏙️ NY Real Estate 2026")
+    st.markdown("## NY Real Estate 2026")
     st.markdown("---")
     page = st.radio(
         "Navigate",
         [
-            "🏠 Overview",
-            "🔍 Data Quality",
-            "🧹 Data Cleaning",
-            "📊 Univariate Analysis",
-            "🔗 Multivariate Analysis",
-            "💡 Key Insights",
+            "Overview",
+            " Data Quality",
+            " Data Cleaning",
+            " Univariate Analysis",
+            " Multivariate Analysis",
+            " Key Insights",
         ],
     )
     st.markdown("---")
     st.markdown("**Dataset:** New York Real Estate 2026")
     st.markdown("**Source:** Compiled real-estate listings")
+    #st.markdown(f"**Rows:** {df.shape[0]:,} | **Cols:** {df.shape[1]}")
     st.markdown("**Rows:** ~8,273 | **Cols:** 11")
 
 
-# ─────────────────────────────────────────────
+
 # LOAD DATA
-# ─────────────────────────────────────────────
 DATA_PATH = "new_york_real_estate_2026_final.csv"
 raw_df = load_raw_data(DATA_PATH)
 df, cleaning_log = clean_data(DATA_PATH)
 
 
-# ═══════════════════════════════════════════════════════════════
 # PAGE 1 — OVERVIEW
-# ═══════════════════════════════════════════════════════════════
-if page == "🏠 Overview":
-    st.markdown('<div class="main-header">🏙️ New York Real Estate 2026</div>', unsafe_allow_html=True)
+if page == "Overview":
+    st.markdown('<div class="main-header"> New York Real Estate 2026</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">A complete data wrangling & exploratory analysis</div>', unsafe_allow_html=True)
 
     # KPIs
@@ -272,33 +264,18 @@ if page == "🏠 Overview":
 
     st.markdown("---")
 
-    # Research Questions
-    st.markdown('<div class="section-title">🎯 Research Questions</div>', unsafe_allow_html=True)
-    questions = [
-        ("Q1", "How are listing prices distributed across New York, and what are the typical price ranges by property type?"),
-        ("Q2", "What is the relationship between property size (sqft) and listing price? Does it vary by property type?"),
-        ("Q3", "How does the number of bedrooms and bathrooms affect listing price?"),
-        ("Q4", "Which property types offer the best value (price per sqft)?"),
-        ("Q5", "How do multi-story properties compare to single-story in terms of price and size?"),
-        ("Q6", "Is garage availability associated with higher property prices?"),
-    ]
-    cols = st.columns(2)
-    for i, (q, text) in enumerate(questions):
-        with cols[i % 2]:
-            st.markdown(f"""<div class="question-box">
-                <strong style="color:#2e7d32">{q}:</strong> {text}
-            </div>""", unsafe_allow_html=True)
-
+    
+       #Raw Dataset Preview
     st.markdown("---")
-    st.markdown('<div class="section-title">📋 Raw Dataset Preview</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title"> Raw Dataset Preview</div>', unsafe_allow_html=True)
     st.dataframe(raw_df.head(50), use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE 2 — DATA QUALITY
 # ═══════════════════════════════════════════════════════════════
-elif page == "🔍 Data Quality":
-    st.markdown('<div class="main-header">🔍 Data Quality Assessment</div>', unsafe_allow_html=True)
+elif page == " Data Quality":
+    st.markdown('<div class="main-header"> Data Quality Assessment</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">Missing Values Heatmap</div>', unsafe_allow_html=True)
 
@@ -319,11 +296,7 @@ elif page == "🔍 Data Quality":
     st.plotly_chart(fig_miss, use_container_width=True)
     st.dataframe(missing, use_container_width=True)
 
-    st.markdown('<div class="section-title">Duplicate Rows</div>', unsafe_allow_html=True)
-    dups = raw_df.duplicated().sum()
-    st.markdown(f"""<div class="insight-box">
-        ⚠️ Found <strong>{dups}</strong> duplicate row(s) in the raw dataset.
-    </div>""", unsafe_allow_html=True)
+   
 
     st.markdown('<div class="section-title">Outlier Detection — List Price</div>', unsafe_allow_html=True)
     fig_box_price = px.box(
@@ -351,27 +324,11 @@ elif page == "🔍 Data Quality":
     )
     st.plotly_chart(fig_types, use_container_width=True)
 
-
 # ═══════════════════════════════════════════════════════════════
 # PAGE 3 — DATA CLEANING
 # ═══════════════════════════════════════════════════════════════
-elif page == "🧹 Data Cleaning":
-    st.markdown('<div class="main-header">🧹 Data Cleaning Phase</div>', unsafe_allow_html=True)
-    st.markdown("Every transformation is documented below with before/after metrics.")
-
-    for i, step in enumerate(cleaning_log, 1):
-        st.markdown(f'<div class="cleaning-step"><strong>Step {i}:</strong> {step}</div>',
-                    unsafe_allow_html=True)
-
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Rows (raw)", f"{len(raw_df):,}")
-    with col2:
-        st.metric("Rows (clean)", f"{len(df):,}", delta=f"-{len(raw_df)-len(df):,} removed")
-    with col3:
-        st.metric("Columns (clean)", str(len(df.columns)))
-
+elif page == " Data Cleaning":
+    
     st.markdown('<div class="section-title">Cleaned Dataset — Summary Statistics</div>', unsafe_allow_html=True)
     st.dataframe(df.describe().T.style.format("{:.2f}"), use_container_width=True)
 
@@ -384,11 +341,12 @@ elif page == "🧹 Data Cleaning":
     st.dataframe(df.head(100), use_container_width=True)
 
 
+
 # ═══════════════════════════════════════════════════════════════
 # PAGE 4 — UNIVARIATE ANALYSIS
 # ═══════════════════════════════════════════════════════════════
-elif page == "📊 Univariate Analysis":
-    st.markdown('<div class="main-header">📊 Univariate Analysis</div>', unsafe_allow_html=True)
+elif page == " Univariate Analysis":
+    st.markdown('<div class="main-header">Univariate Analysis</div>', unsafe_allow_html=True)
     st.markdown("Exploring each variable independently — distributions, central tendency, and spread.")
 
     # ── Variable 1: listPrice ──────────────────────────────────
@@ -402,7 +360,7 @@ elif page == "📊 Univariate Analysis":
     c2.metric("Median", fmt_price(df['listPrice'].median()))
     c3.metric("Std Dev",fmt_price(df['listPrice'].std()))
     c4.metric("Skewness", f"{df['listPrice'].skew():.2f}")
-    st.markdown('<div class="insight-box">📌 Price is heavily right-skewed. Most properties list under $1 M, but high-end outliers push the mean well above the median. The median ($529 K) is a better central estimate.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Price is heavily right-skewed. Most properties list under $1 M, but high-end outliers push the mean well above the median. The median ($529 K) is a better central estimate.</div>', unsafe_allow_html=True)
 
     # ── Variable 2: sqft ──────────────────────────────────────
     st.markdown('<div class="section-title">Variable 2: Square Footage</div>', unsafe_allow_html=True)
@@ -410,13 +368,13 @@ elif page == "📊 Univariate Analysis":
                           "Distribution of Property Size (sqft)", "Square Feet",
                           color="#764ba2")
     st.plotly_chart(fig2, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 Most properties fall between 1,000–2,500 sqft. The distribution is right-skewed, indicating a small number of very large properties (multi-family/commercial).</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Most properties fall between 1,000–2,500 sqft. The distribution is right-skewed, indicating a small number of very large properties (multi-family/commercial).</div>', unsafe_allow_html=True)
 
     # ── Variable 3: Property Type (PIE chart) ─────────────────
     st.markdown('<div class="section-title">Variable 3: Property Type</div>', unsafe_allow_html=True)
     fig3 = plot_pie(df, "type", "Proportion of Property Types")
     st.plotly_chart(fig3, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 Single-family homes dominate the dataset (≈62%), followed by condos and multi-family. Land and farm listings are rare.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Single-family homes dominate the dataset (≈62%), followed by condos and multi-family. Land and farm listings are rare.</div>', unsafe_allow_html=True)
 
     # ── Variable 4: Number of Bedrooms ────────────────────────
     st.markdown('<div class="section-title">Variable 4: Number of Bedrooms</div>', unsafe_allow_html=True)
@@ -426,7 +384,7 @@ elif page == "📊 Univariate Analysis":
                   title="Bedroom Count Distribution",
                   color="Count", color_continuous_scale="Purples")
     st.plotly_chart(fig4, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 3-bedroom properties are the most common, closely followed by 4-bedroom. Studios/1-bed are mostly condos and co-ops.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> 3-bedroom properties are the most common, closely followed by 4-bedroom. Studios/1-bed are mostly condos and co-ops.</div>', unsafe_allow_html=True)
 
     # ── Variable 5: Number of Bathrooms ───────────────────────
     st.markdown('<div class="section-title">Variable 5: Number of Full Bathrooms</div>', unsafe_allow_html=True)
@@ -444,16 +402,14 @@ elif page == "📊 Univariate Analysis":
         color="#4facfe", bins=60,
     )
     st.plotly_chart(fig6, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 Price per sqft typically ranges from $100–$1,500. Most activity clusters between $200–$600/sqft, typical for NY suburban and outer-borough markets.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Price per sqft typically ranges from $100–$1,500. Most activity clusters between $200–$600/sqft, typical for NY suburban and outer-borough markets.</div>', unsafe_allow_html=True)
 
 
-# ═══════════════════════════════════════════════════════════════
 # PAGE 5 — MULTIVARIATE ANALYSIS
-# ═══════════════════════════════════════════════════════════════
-elif page == "🔗 Multivariate Analysis":
-    st.markdown('<div class="main-header">🔗 Bi- & Multi-variate Analysis</div>', unsafe_allow_html=True)
+elif page == " Multivariate Analysis":
+    st.markdown('<div class="main-header"> Bi- & Multi-variate Analysis</div>', unsafe_allow_html=True)
 
-    # ── Q1: Price by Property Type (BOX) ──────────────────────
+    #  Q1: Price by Property Type (BOX) ──────────────────────
     st.markdown('<div class="section-title">Q1 & Q4 — Price Distribution & Value by Property Type</div>', unsafe_allow_html=True)
     fig_b1 = plot_box(
         df.query("listPrice < 5_000_000"),
@@ -479,7 +435,7 @@ elif page == "🔗 Multivariate Analysis":
     st.plotly_chart(fig_bar_pps, use_container_width=True)
     st.markdown('<div class="insight-box">📌 Co-ops and condos have the highest price/sqft (premium urban locations), while farms and land have the lowest. Single-family homes are mid-range in $/sqft but dominate total volume.</div>', unsafe_allow_html=True)
 
-    # ── Q2: Sqft vs Price (SCATTER) ───────────────────────────
+    #  Q2: Sqft vs Price (SCATTER) ───────────────────────────
     st.markdown('<div class="section-title">Q2 — Property Size vs Listing Price</div>', unsafe_allow_html=True)
     scatter_df = (
         df.dropna(subset=["sqft", "price_per_sqft"])
@@ -491,7 +447,8 @@ elif page == "🔗 Multivariate Analysis":
     st.plotly_chart(fig_sc, use_container_width=True)
     st.markdown('<div class="insight-box">📌 Strong positive correlation between sqft and price across all types. Single-family homes show the widest spread, indicating location plays a large secondary role.</div>', unsafe_allow_html=True)
 
-    # ── Q3: Bedrooms/Bathrooms vs Price (BAR grouped) ─────────
+    #  Q3: Bedrooms/Bathrooms vs Price (BAR grouped) ─────────
+    #أدفع كام زيادة لو زودت أوضة نوم؟
     st.markdown('<div class="section-title">Q3 — Bedrooms & Bathrooms vs Price</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
@@ -526,7 +483,7 @@ elif page == "🔗 Multivariate Analysis":
         st.plotly_chart(fig_baths, use_container_width=True)
     st.markdown('<div class="insight-box">📌 Both bedroom and bathroom count show a clear monotonic increase in median price. The jump from 4→5 bedrooms is especially steep, suggesting luxury-tier properties.</div>', unsafe_allow_html=True)
 
-    # ── Q5: Stories vs Price ───────────────────────────────────
+    #  Q5: Stories vs Price ───────────────────────────────────
     st.markdown('<div class="section-title">Q5 — Number of Stories vs Price & Size</div>', unsafe_allow_html=True)
     stories_df = (
         df[df["stories"].between(1, 4)]
@@ -541,9 +498,9 @@ elif page == "🔗 Multivariate Analysis":
     )
     fig_s1.update_yaxes(tickprefix="$", tickformat=",")
     st.plotly_chart(fig_s1, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 2-story properties command the highest median prices and show the widest price range. 1-story homes are typically cheaper, reflecting smaller footprints (condos/co-ops).</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> 2-story properties command the highest median prices and show the widest price range. 1-story homes are typically cheaper, reflecting smaller footprints (condos/co-ops).</div>', unsafe_allow_html=True)
 
-    # ── Q6: Garage vs Price (BOX) ─────────────────────────────
+    #  Q6: Garage vs Price (BOX) ─────────────────────────────
     st.markdown('<div class="section-title">Q6 — Garage Availability vs Listing Price</div>', unsafe_allow_html=True)
     garage_df = df.copy()
     garage_df["has_garage"] = garage_df["garage"].apply(
@@ -557,17 +514,17 @@ elif page == "🔗 Multivariate Analysis":
     )
     fig_g.update_yaxes(tickprefix="$", tickformat=",")
     st.plotly_chart(fig_g, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 Properties with a garage have a notably higher median listing price, suggesting garage availability is a strong value indicator — particularly in suburban NY markets.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Properties with a garage have a notably higher median listing price, suggesting garage availability is a strong value indicator — particularly in suburban NY markets.</div>', unsafe_allow_html=True)
 
-    # ── Correlation Heatmap ────────────────────────────────────
+    #  Correlation Heatmap ────────────────────────────────────
     st.markdown('<div class="section-title">Correlation Matrix (Numeric Variables)</div>', unsafe_allow_html=True)
     num_cols = ["listPrice", "sqft", "stories", "beds", "baths_full", "garage", "price_per_sqft"]
     corr_mat = df[num_cols].corr().round(3)
     fig_heat = plot_heatmap(corr_mat, "Feature Correlation Heatmap")
     st.plotly_chart(fig_heat, use_container_width=True)
-    st.markdown('<div class="insight-box">📌 Strongest correlations: listPrice↔sqft (0.57), listPrice↔beds (0.45), listPrice↔baths_full (0.55). Multicollinearity exists between beds and baths — expected in real estate.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="insight-box"> Strongest correlations: listPrice↔sqft (0.57), listPrice↔beds (0.45), listPrice↔baths_full (0.55). Multicollinearity exists between beds and baths — expected in real estate.</div>', unsafe_allow_html=True)
 
-    # ── Pair-level: type × beds heatmap ───────────────────────
+    #  Pair-level: type × beds heatmap ───────────────────────
     st.markdown('<div class="section-title">Beds vs Property Type — Median Price Heatmap</div>', unsafe_allow_html=True)
     pivot = (
         df[df["beds_int"].between(1, 7)]
@@ -586,11 +543,9 @@ elif page == "🔗 Multivariate Analysis":
     st.plotly_chart(fig_pivot, use_container_width=True)
 
 
-# ═══════════════════════════════════════════════════════════════
 # PAGE 6 — KEY INSIGHTS
-# ═══════════════════════════════════════════════════════════════
-elif page == "💡 Key Insights":
-    st.markdown('<div class="main-header">💡 Key Insights & Conclusions</div>', unsafe_allow_html=True)
+elif page == " Key Insights":
+    st.markdown('<div class="main-header"> Key Insights & Conclusions</div>', unsafe_allow_html=True)
 
     insights = [
         ("Q1 — Price Distribution",
@@ -624,13 +579,13 @@ elif page == "💡 Key Insights":
         <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;
                     padding:16px 20px;margin:10px 0;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
             <div style="font-weight:700;color:#667eea;font-size:1.05rem;margin-bottom:6px;">
-                🔑 {title}
+                 {title}
             </div>
             <div style="color:#444;line-height:1.65;">{body}</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown('<div class="section-title">📈 Final Summary Chart — Median Price by Type</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title"> Final Summary Chart — Median Price by Type</div>', unsafe_allow_html=True)
     summary = (
         df.groupby("type")
         .agg(
@@ -656,6 +611,41 @@ elif page == "💡 Key Insights":
     )
     fig_final.update_yaxes(tickprefix="$", tickformat=",")
     st.plotly_chart(fig_final, use_container_width=True)
+
+    # ── REPORT SUMMARY ────────────────────────────────────────
+    st.markdown("---")
+    st.markdown('<div class="section-title"> Report Summary</div>', unsafe_allow_html=True)
+
+    # Statistical highlights
+    col1, col2, col3, col4 = st.columns(4)
+    stats = [
+        ("Median List Price",   fmt_price(df["listPrice"].median()),       "Core market benchmark"),
+        ("Mean List Price",     fmt_price(df["listPrice"].mean()),         "Skewed by luxury tier"),
+        ("Median Price / Sqft", f"${df['price_per_sqft'].median():,.0f}",  "Efficiency metric"),
+        ("Price–Sqft Corr.",    "≈ 0.57",                                  "Strongest predictor"),
+    ]
+    for col, (label, val, note) in zip([col1, col2, col3, col4], stats):
+        with col:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{val}</div>
+                <div class="metric-label">{label}<br><small>{note}</small></div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Conclusion paragraph
+    st.markdown("""
+    <div style="background:#f8f9ff;border-left:5px solid #667eea;border-radius:8px;
+                padding:18px 22px;line-height:1.8;color:#333;">
+        The NY real estate market is driven by three key pillars:
+        <strong>property size (sqft)</strong>, <strong>bedroom/bathroom count</strong>,
+        and <strong>property type</strong>. Urban condos and co-ops lead in price-per-sqft,
+        while single-family suburban homes offer the best absolute value. Garage availability
+        and multi-story structure are strong proxies for higher-end listings.
+        Buyers seeking value should target single-family homes in outer areas;
+        investors should focus on well-located condos with strong $/sqft metrics.
+    </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
